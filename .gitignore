@@ -10,7 +10,6 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 
 # OS
 .DS_Store
@@ -21,38 +20,22 @@ lerna-debug.log*
 
 # IDEs and editors
 /.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+modules.xml
+.vscode/
+*.sw?
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# dotenv environment variable files
+# Environment variables (KHÔNG commit secret). .env.example vẫn được commit.
 .env
+.env.local
 .env.development.local
 .env.test.local
 .env.production.local
-.env.local
-.spec.ts
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
 # temp directory
-.temp
-.tmp
+temp/
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Diagnostic reports (https://nodejs.org/api/report.html)
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-
-/generated/prisma
+# npm config (có thể chứa token)
+.npmrc

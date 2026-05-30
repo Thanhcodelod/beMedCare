@@ -52,6 +52,10 @@ import { OrdersModule } from './modules/orders/orders.module';
           host: config.get<string>('REDIS_HOST') ?? 'localhost',
           port: parseInt(config.get<string>('REDIS_PORT') ?? '6379', 10),
           password: config.get<string>('REDIS_PASSWORD'),
+          // Managed Redis providers (Upstash, Redis Cloud, ...) only accept
+          // TLS connections. Enable with REDIS_TLS=true in production; local
+          // Docker Redis stays plaintext so dev keeps working unchanged.
+          ...(config.get<string>('REDIS_TLS') === 'true' ? { tls: {} } : {}),
         },
       }),
     }),
