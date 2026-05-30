@@ -1,0 +1,399 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password_hash       String
+  role                Role      @default(PATIENT)
+  is_active           Boolean   @default(true)
+  last_login          DateTime? @map("last_login")
+  refresh_token       String?   @map("refresh_token")
+  // Bumped whenever the password changes. JwtStrategy rejects tokens
+  // whose `iat` is older than this timestamp — invalidates all sessions
+  // after a password change / reset.
+  password_changed_at DateTime? @map("password_changed_at")
+  created_at          DateTime  @default(now()) @map("created_at")
+  updated_at          DateTime  @updatedAt @map("updated_at")
+
+  profile             Profile?
+  passwordResetTokens PasswordResetToken[]
+  orders              Order[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id          String    @id @default(uuid())
+  user_id     String    @map("user_id")
+  // Stored as SHA-256 hex of the raw token. The raw token only ever
+  // exists in the email body and the user's URL bar.
+  token_hash  String    @unique @map("token_hash")
+  expires_at  DateTime  @map("expires_at")
+  used_at     DateTime? @map("used_at")
+  created_at  DateTime  @default(now()) @map("created_at")
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("password_reset_tokens")
+}
+
+model Profile {
+  id            String    @id @default(uuid())
+  user_id       String    @unique @map("user_id")
+  full_name     String    @map("full_name")
+  phone         String
+  avatar_url    String?   @map("avatar_url")
+  date_of_birth DateTime? @map("date_of_birth")
+  gender        Gender?
+  address       String?
+  created_at    DateTime  @default(now()) @map("created_at")
+  updated_at    DateTime  @updatedAt @map("updated_at")
+  
+  user          User      @relation(fields: [user_id], references: [id], onDelete: Cascade, map: "profile_user_fkey")
+  
+  doctorDetails  DoctorDetails?
+  patientDetails PatientDetails?
+
+  @@map("profiles")
+}
+
+model DoctorDetails {
+  id               String   @id @default(uuid())
+  profile_id       String   @unique @map("profile_id")
+  specialization   String
+  experience_years Int?     @map("experience_years")
+  bio              String?
+  consultation_fee Decimal? @map("consultation_fee") @db.Decimal(10, 2)
+  qualifications   String[]
+  is_verified      Boolean  @default(false) @map("is_verified")
+  
+  // Tối ưu hóa điểm đánh giá
+  average_rating   Float    @default(0.0) @map("average_rating")
+  total_reviews    Int      @default(0)   @map("total_reviews")
+  
+  created_at       DateTime @default(now()) @map("created_at")
+  updated_at       DateTime @updatedAt @map("updated_at")
+  
+  profile          Profile         @relation(fields:[profile_id], references:[id], onDelete: Cascade, map: "doctordetails_profile_fkey")
+  schedules        Schedule[]
+  appointments     Appointment[]   @relation("doctor_appointments")
+  reviews          Review[]        @relation("doctor_reviews")
+  medicalRecords   MedicalRecord[] @relation("doctor_medical_records")
+  leaveRequests    LeaveRequest[]
+
+  @@index([specialization])
+  @@index([is_verified, specialization])
+  @@map("doctor_details")
+}
+
+model PatientDetails {
+  id                String   @id @default(uuid())
+  profile_id        String   @unique @map("profile_id")
+  blood_type        String?  @map("blood_type")
+  allergies         String[]
+  medical_history   String?  @map("medical_history")
+  emergency_contact Json?    @map("emergency_contact")
+  created_at        DateTime @default(now()) @map("created_at")
+  updated_at        DateTime @updatedAt @map("updated_at")
+  
+  profile           Profile         @relation(fields: [profile_id], references: [id], onDelete: Cascade, map: "patientdetails_profile_fkey")
+  appointments      Appointment[]   @relation("patient_appointments")
+  reviews           Review[]        @relation("patient_reviews")
+  medicalRecords    MedicalRecord[] @relation("patient_medical_records")
+  healthMetrics     HealthMetric[]
+
+  @@map("patient_details")
+}
+
+model Schedule {
+  id            String   @id @default(uuid())
+  doctor_id     String   @map("doctor_id")
+  date          DateTime @db.Date
+  start_time    String 
+  end_time      String
+  is_recurring  Boolean  @default(false) @map("is_recurring")
+  slot_duration Int?     @map("slot_duration")
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
+  
+  doctor        DoctorDetails @relation(fields: [doctor_id], references: [id], onDelete: Cascade, map: "schedule_doctor_fkey")
+  appointments  Appointment[] 
+
+  @@unique([doctor_id, date])
+  @@index([date])
+  @@map("schedules")
+}
+
+model Appointment {
+  id                  String            @id @default(uuid())
+  appointment_code    String            @unique @map("appointment_code")
+  patient_id          String            @map("patient_id")
+  doctor_id           String            @map("doctor_id")
+  schedule_id         String?           @map("schedule_id") 
+  appointment_date    DateTime          @db.Date @map("appointment_date")
+  start_time          String            @map("start_time")
+  end_time            String            @map("end_time")
+  status              AppointmentStatus @default(PENDING)
+  appointment_type    AppointmentType   @default(OFFLINE) @map("appointment_type")
+  meeting_url         String?           @map("meeting_url")
+  cancellation_reason String?           @map("cancellation_reason")
+  patient_note        String?           @map("patient_note") // Bệnh nhân ghi chú triệu chứng khi đặt lịch
+  // Set by the teleconsultation gateway when either party emits `endCall`.
+  // Doctor still has to call POST /appointments/:id/complete to write the
+  // medical record + flip status — this column is just an audit / hint.
+  call_ended_at       DateTime?         @map("call_ended_at")
+
+  created_at          DateTime          @default(now()) @map("created_at")
+  updated_at          DateTime          @updatedAt @map("updated_at")
+  
+  patient             PatientDetails    @relation("patient_appointments", fields: [patient_id], references: [id], onDelete: Cascade, map: "appointment_patient_fkey")
+  doctor              DoctorDetails     @relation("doctor_appointments", fields:[doctor_id], references: [id], onDelete: Cascade, map: "appointment_doctor_fkey")
+  schedule            Schedule?         @relation(fields: [schedule_id], references: [id], onDelete: SetNull, map: "appointment_schedule_fkey")
+  
+  review              Review?
+  medicalRecord       MedicalRecord?
+  orders              Order[]
+  chat_messages       ChatMessage[]
+  sos_call            SosCall?         @relation("appointment_sos_call")
+
+  @@index([patient_id, appointment_date])
+  @@index([doctor_id, appointment_date, status])
+  @@index([schedule_id, start_time])
+  @@map("appointments")
+}
+
+// ================= BẢNG MỚI: HỒ SƠ BỆNH ÁN (Thay thế doctor_note) =================
+model MedicalRecord {
+  id               String   @id @default(uuid())
+  appointment_id   String   @unique @map("appointment_id")
+  patient_id       String   @map("patient_id")
+  doctor_id        String   @map("doctor_id")
+  
+  diagnosis        String   @db.Text
+  diagnostic_code  String?  @map("diagnostic_code")
+  treatment        String?  @db.Text 
+  prescription     String?  @db.Text
+  doctor_advice    String?  @db.Text
+  
+  created_at       DateTime @default(now()) @map("created_at")
+
+  appointment      Appointment    @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
+  patient          PatientDetails @relation("patient_medical_records", fields: [patient_id], references: [id], onDelete: Cascade)
+  doctor           DoctorDetails  @relation("doctor_medical_records", fields:[doctor_id], references: [id], onDelete: Cascade)
+
+  @@index([patient_id, created_at(sort: Desc)])
+  @@index([doctor_id, created_at(sort: Desc)])
+  @@map("medical_records")
+}
+
+// SOS emergency calls. Persisted (instead of in-memory Map) so:
+//   1. Restart-server doesn't drop pending calls.
+//   2. Multi-instance deploy shares state (DB unique constraint = atomic
+//      accept; only one doctor can flip WAITING → ACCEPTED).
+//   3. We have an audit trail of who accepted what and when.
+model SosCall {
+  id              String        @id @default(uuid())
+  // Stable room id used as Socket.IO room name + appointment_code when
+  // the call is accepted (DOCTOR's appointment is created with this).
+  room_id         String        @unique @map("room_id")
+  patient_user_id String        @map("patient_user_id")
+  patient_name    String        @map("patient_name")
+  patient_socket_id String      @map("patient_socket_id")
+  description     String        @db.Text
+  status          SosStatus     @default(WAITING)
+  doctor_user_id  String?       @map("doctor_user_id")
+  appointment_id  String?       @unique @map("appointment_id")
+  accepted_at     DateTime?     @map("accepted_at")
+  created_at      DateTime      @default(now()) @map("created_at")
+
+  appointment     Appointment?  @relation("appointment_sos_call", fields: [appointment_id], references: [id], onDelete: SetNull)
+
+  @@index([status, created_at])
+  @@map("sos_calls")
+}
+
+enum SosStatus {
+  WAITING
+  ACCEPTED
+  CANCELLED
+}
+
+// In-call chat messages. Persisted so reload of the page restores the
+// transcript and so the medical-record team has an audit trail.
+model ChatMessage {
+  id              String   @id @default(uuid())
+  appointment_id  String   @map("appointment_id")
+  sender_user_id  String   @map("sender_user_id")
+  content         String   @db.Text
+  created_at      DateTime @default(now()) @map("created_at")
+
+  appointment     Appointment @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
+
+  @@index([appointment_id, created_at])
+  @@map("chat_messages")
+}
+
+// ================= CÁC BẢNG PHỤ TRỢ =================
+model Review {
+  id             String   @id @default(uuid())
+  appointment_id String   @unique @map("appointment_id")
+  patient_id     String   @map("patient_id")
+  doctor_id      String   @map("doctor_id")
+  rating         Int
+  comment        String?  @db.Text
+  created_at     DateTime @default(now()) @map("created_at")
+
+  appointment    Appointment    @relation(fields:[appointment_id], references:[id], onDelete: Cascade)
+  patient        PatientDetails @relation("patient_reviews", fields:[patient_id], references: [id], onDelete: Cascade)
+  doctor         DoctorDetails  @relation("doctor_reviews", fields: [doctor_id], references: [id], onDelete: Cascade)
+
+  @@index([doctor_id])
+  @@map("reviews")
+}
+
+model HealthMetric {
+  id              String   @id @default(uuid())
+  patient_id      String   @map("patient_id")
+  date            DateTime @default(now()) @map("date")
+  weight          Float?
+  height          Float?
+  heart_rate      Int?     @map("heart_rate")
+  blood_pressure  String?  @map("blood_pressure") // e.g., "120/80"
+  temperature     Float?   @map("temperature")
+  bmi             Float?
+  
+  patient         PatientDetails @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+
+  @@index([patient_id, date])
+  @@map("health_metrics")
+}
+
+// ================= ENUMS =================
+enum Role {
+  ADMIN
+  DOCTOR
+  PATIENT
+  NURSE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AppointmentType {
+  ONLINE
+  OFFLINE
+  EMERGENCY
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  WAITING_FOR_RESULTS
+  COMPLETED
+  DISCHARGED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentMethod {
+  ADVANCE_PAYMENT
+  PAYMENT_AT_CLINIC
+}
+
+// ================= NEW: LEAVE REQUESTS =================
+model LeaveRequest {
+  id          String      @id @default(uuid())
+  doctor_id   String      @map("doctor_id")
+  date        DateTime    @db.Date
+  session     LeaveSession
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  created_at  DateTime    @default(now()) @map("created_at")
+  updated_at  DateTime    @updatedAt @map("updated_at")
+
+  doctor      DoctorDetails @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+
+  @@index([doctor_id, date, status])
+  @@map("leave_requests")
+}
+
+enum LeaveSession {
+  MORNING
+  AFTERNOON
+  FULL_DAY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ================= SEPAY QR ORDERS =================
+// Standalone QR-transfer payment flow (not tied to Appointment/VNPay).
+// A client creates an Order, gets back a VietQR URL, transfers money at
+// their bank with `transfer_code` in the memo, and SePay posts a webhook
+// that flips the order to PAID.
+model Order {
+  id             String       @id @default(uuid())
+  user_id        String       @map("user_id")
+  // Optional link to the appointment this order is paying for. When the
+  // webhook flips the order to PAID, the linked appointment moves to
+  // CONFIRMED in the same transaction.
+  appointment_id String?      @map("appointment_id")
+  amount         Int
+  status         OrderStatus  @default(PENDING)
+  // Format: "ORD-<6-char user fingerprint>-<random>". The fingerprint lets
+  // the webhook double-check the bank memo matches the order's owner before
+  // flipping to PAID.
+  transfer_code  String       @unique @map("transfer_code")
+  // SePay's own transaction id — kept so duplicate webhook deliveries
+  // (SePay retries on non-2xx) can be detected instead of reprocessed.
+  sepay_txn_id   BigInt?      @unique @map("sepay_txn_id")
+  created_at     DateTime     @default(now()) @map("created_at")
+  updated_at     DateTime     @updatedAt @map("updated_at")
+
+  user           User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  appointment    Appointment? @relation(fields: [appointment_id], references: [id], onDelete: SetNull)
+  payment_logs   PaymentLog[]
+
+  @@index([user_id])
+  @@index([appointment_id])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// Audit trail for every SePay webhook delivery — both accepted and rejected,
+// so we can investigate misrouted transfers, replay attempts, or amount
+// mismatches without trawling logs.
+model PaymentLog {
+  id          String   @id @default(uuid())
+  order_id    String?  @map("order_id")
+  result      String   // "ok" | "ignored" | "rejected"
+  reason      String?
+  raw_payload Json     @map("raw_payload")
+  created_at  DateTime @default(now()) @map("created_at")
+
+  order       Order?   @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@map("payment_logs")
+}
