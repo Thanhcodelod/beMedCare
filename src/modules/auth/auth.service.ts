@@ -73,6 +73,8 @@ export class AuthService {
           full_name: dto.fullName,
           phone: dto.phone,
           avatar_url: dto.avatarUrl,
+          date_of_birth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          gender: dto.gender,
         },
       });
 

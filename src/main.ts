@@ -14,13 +14,8 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
   const isProd = config.get<string>('NODE_ENV') === 'production';
-
-  // When deployed behind a reverse proxy (nginx, ALB, Cloudflare),
-  // honor X-Forwarded-For so ThrottlerGuard sees the real client IP
-  // instead of the proxy's. Defaults to off in dev for local clarity.
   const trustProxy = config.get<string>('TRUST_PROXY');
   if (trustProxy) {
-    // Accepted values: "true", a hop count like "1", or a comma list of CIDRs.
     const parsed =
       trustProxy === 'true'
         ? true

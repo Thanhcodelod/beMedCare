@@ -38,8 +38,11 @@ export class UsersController {
   // per-route budget so the global default isn't burnt by dashboard loads.
   @Throttle({ default: { limit: 60, ttl: seconds(60) } })
   @ApiOperation({ summary: 'Lấy thông tin tài khoản đang đăng nhập' })
-  getProfile(@GetUser() user: UserWithoutPassword) {
-    return user;
+  // Trả về hồ sơ ĐẦY ĐỦ (kèm profile + doctorDetails/patientDetails) thay vì
+  // chỉ {id,email,role} từ JWT — để trang Hồ sơ cá nhân fill sẵn được
+  // ngày sinh, giới tính, SĐT, địa chỉ... đã lưu trước đó.
+  getProfile(@GetUser('id') userId: string) {
+    return this.usersService.findOne(userId);
   }
 
   @Patch('profile/me')

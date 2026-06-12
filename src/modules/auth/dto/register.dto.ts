@@ -4,7 +4,10 @@ import {
   MinLength,
   MaxLength,
   IsOptional,
+  IsDateString,
+  IsEnum,
 } from 'class-validator';
+import { Gender } from '@prisma/client';
 
 export class RegisterDto {
   @IsEmail()
@@ -31,4 +34,14 @@ export class RegisterDto {
   @IsString()
   @MaxLength(500)
   avatarUrl?: string;
+
+  // Ngày sinh (ISO date "YYYY-MM-DD"). Tuỳ chọn khi đăng ký.
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  // Giới tính: MALE / FEMALE / OTHER (enum Gender của Prisma). Tuỳ chọn.
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
 }
